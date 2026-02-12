@@ -1,0 +1,19 @@
+[package]
+name = "arbitraj_botu"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Botun ana motoru (Asenkron çalışma için)
+tokio = { version = "1", features = ["full"] }
+# Blockchain ile konuşmak için en hızlı kütüphane
+alloy = { version = "0.1", features = ["full"] }
+# Veri işleme ve matematik araçları
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+eyre = "0.6"
+futures-util = "0.3.31"
+# Profesyonel zamanlama ve loglama
+chrono = "0.4"
+# Renkli terminal çıktısı
+colored = "2"
