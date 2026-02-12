@@ -1,1 +1,11 @@
+# Ortam değişkenleri (hassas bilgiler!)
+.env
+
+# Rust build çıktıları
 /target
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
