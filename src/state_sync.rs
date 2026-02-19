@@ -15,16 +15,15 @@ use eyre::Result;
 use std::time::Instant;
 
 use crate::math::sqrt_price_x96_to_eth_price;
-use crate::types::{PoolConfig, SharedPoolState};
+use crate::types::{DexType, PoolConfig, SharedPoolState};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Uniswap V3 / Aerodrome CL Havuz Arayüzü
-// Her iki protokol de aynı slot0 + liquidity yapısını kullanır
+// Uniswap V3 Havuz Arayüzü (slot0 → 7 değişken, feeProtocol DAHİL)
 // ─────────────────────────────────────────────────────────────────────────────
 
 sol! {
     #[sol(rpc)]
-    interface IPool {
+    interface IUniswapPool {
         function slot0() external view returns (
             uint160 sqrtPriceX96,
             int24 tick,
@@ -32,6 +31,26 @@ sol! {
             uint16 observationCardinality,
             uint16 observationCardinalityNext,
             uint8 feeProtocol,
+            bool unlocked
+        );
+
+        function liquidity() external view returns (uint128);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aerodrome Slipstream Havuz Arayüzü (slot0 → 6 değişken, feeProtocol YOK)
+// ─────────────────────────────────────────────────────────────────────────────
+
+sol! {
+    #[sol(rpc)]
+    interface IAerodromePool {
+        function slot0() external view returns (
+            uint160 sqrtPriceX96,
+            int24 tick,
+            uint16 observationIndex,
+            uint16 observationCardinality,
+            uint16 observationCardinalityNext,
             bool unlocked
         );
 
@@ -56,21 +75,25 @@ pub async fn sync_pool_state<T: Transport + Clone, P: Provider<T, Ethereum> + Sy
     pool_state: &SharedPoolState,
     block_number: u64,
 ) -> Result<()> {
-    let pool = IPool::new(pool_config.address, provider);
-
-    // slot0 ve liquidity değerlerini oku
-    let slot0_result = pool.slot0().call().await;
-    let liquidity_result = pool.liquidity().call().await;
-
-    let slot0 = slot0_result
-        .map_err(|e| eyre::eyre!("[{}] slot0 okuma hatası: {}", pool_config.name, e))?;
-    let liq_response = liquidity_result
-        .map_err(|e| eyre::eyre!("[{}] liquidity okuma hatası: {}", pool_config.name, e))?;
-
-    // Değerleri çıkar
-    let sqrt_price_x96 = slot0.sqrtPriceX96;
-    let tick = slot0.tick;
-    let liquidity = liq_response._0;
+    // DEX tipine göre doğru arayüzü kullan
+    let (sqrt_price_x96, tick, liquidity) = match pool_config.dex {
+        DexType::UniswapV3 => {
+            let pool = IUniswapPool::new(pool_config.address, provider);
+            let slot0 = pool.slot0().call().await
+                .map_err(|e| eyre::eyre!("[{}] slot0 okuma hatası: {}", pool_config.name, e))?;
+            let liq = pool.liquidity().call().await
+                .map_err(|e| eyre::eyre!("[{}] liquidity okuma hatası: {}", pool_config.name, e))?;
+            (slot0.sqrtPriceX96, slot0.tick, liq._0)
+        }
+        DexType::Aerodrome => {
+            let pool = IAerodromePool::new(pool_config.address, provider);
+            let slot0 = pool.slot0().call().await
+                .map_err(|e| eyre::eyre!("[{}] slot0 okuma hatası: {}", pool_config.name, e))?;
+            let liq = pool.liquidity().call().await
+                .map_err(|e| eyre::eyre!("[{}] liquidity okuma hatası: {}", pool_config.name, e))?;
+            (slot0.sqrtPriceX96, slot0.tick, liq._0)
+        }
+    };
 
     // Float dönüşümler (hızlı matematik için)
     let sqrt_price_f64: f64 = {
