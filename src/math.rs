@@ -43,30 +43,20 @@ pub fn sqrt_price_x96_to_eth_price(
         return 0.0;
     }
 
-    // 1) Ham fiyat oranı: (sqrtPriceX96 / 2^96)^2 = token1/token0 raw fiyatı
+    // Adım 1: Ham fiyat oranı (sqrtPriceX96 / 2^96)^2
+    //   Bu değer token1_raw / token0_raw oranıdır (çok küçük, ~1.94e-9)
     let sqrt_price = sqrt_price_x96 / Q96;
     let price_ratio = sqrt_price * sqrt_price;
 
-    // 2) Ondalık düzeltme: token0 ve token1 decimal farkını uygula
-    //    decimal_adjustment = 10^(token0_dec - token1_dec)
-    //    adjusted_price = price_ratio * decimal_adjustment
-    //    Bu bize "1 token0 kaç token1 eder" (decimal-düzeltilmiş) verir
-    let decimal_diff = token0_decimals as i32 - token1_decimals as i32;
-    let decimal_adjustment = 10.0_f64.powi(decimal_diff);
-    let adjusted_price = price_ratio * decimal_adjustment;
+    // Adım 2: Ondalık düzeltme
+    //   token1_dec - token0_dec yönünde 10 üssü alarak ham oranı
+    //   insan-okunur fiyata çeviriyoruz.
+    //   Örnek (USDC/WETH): 10^(18-6) = 10^12
+    //   ~1.94e-9 * 10^12 ≈ 2850 (ETH'nin USDC fiyatı)
+    let decimal_diff = token1_decimals as i32 - token0_decimals as i32;
+    let eth_price = price_ratio * 10.0_f64.powi(decimal_diff);
 
-    if adjusted_price == 0.0 {
-        return 0.0;
-    }
-
-    // 3) Eğer token0 decimal < token1 decimal ise (ör: USDC(6) / WETH(18)),
-    //    bu fiyat "1 USDC kaç WETH eder" anlamına gelir (~0.0003).
-    //    Bize gereken "1 WETH kaç USDC eder" olduğundan tersini almalıyız.
-    if token0_decimals < token1_decimals {
-        1.0 / adjusted_price
-    } else {
-        adjusted_price
-    }
+    eth_price
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
